@@ -18,12 +18,15 @@ The system logs activity and supports monitoring via Kafka and custom logging.
 1. **Start all services**:
    ```bash
    docker-compose up -d
+   
 If needed, rebuild the API service:
 
 docker-compose up -d --build api
+
 Ensure all containers are healthy:
 
 docker ps
+
 Access the site:
 
 Frontend: http://localhost:3000
@@ -52,17 +55,24 @@ Create a .env file in your root project directory and include the following:
 
 # Backend API Environment Variables
 NODE_ENV=production
+
 PORT=3001
 
 # Database Configuration
 DB_HOST=tidb
+
 DB_PORT=4000
+
 DB_USER=root
+
 DB_PASSWORD=
+
 DB_NAME=auth_app
+
 DB_SSL=false
 
 # Kafka Configuration
+
 KAFKA_BROKER=kafka:29092
 
 # Security
@@ -76,11 +86,14 @@ REACT_APP_API_URL=http://localhost:3001
 
 # TiCDC Configuration
 TICDC_ADDR=ticdc:8300
+
 TICDC_PD_ADDR=pd:2379
 
 # Kafka Topics
 KAFKA_USER_ACTIVITIES_TOPIC=user-activities
+
 KAFKA_DATABASE_CHANGES_TOPIC=database-changes
+
 ✅ Do not commit .env to version control — add it to .gitignore.
 
 📁 Docker Tips
@@ -89,6 +102,7 @@ To stop all running containers and rebuild:
 
 docker-compose down -v
 docker-compose up -d --build
+
 To check logs:
 
 docker-compose logs -f api
