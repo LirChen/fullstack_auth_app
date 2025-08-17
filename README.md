@@ -89,6 +89,7 @@ docker-compose up -d --build
 To check logs:
 
 docker-compose logs -f api
+
 📌 Notes
 Database initializes automatically via db-init container
 
