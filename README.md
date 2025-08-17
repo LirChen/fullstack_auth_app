@@ -20,7 +20,8 @@ The system logs activity and supports monitoring via Kafka and custom logging.
    docker-compose up -d
    
 If needed, rebuild the API service:
-   docker-compose up -d --build api
+
+docker-compose up -d --build api
 
 Ensure all containers are healthy:
 
