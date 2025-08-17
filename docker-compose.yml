@@ -1,0 +1,300 @@
+services:
+  # TiDB Database
+  tidb:
+    image: pingcap/tidb:v7.1.0
+    container_name: tidb
+    ports:
+      - "4000:4000"
+      - "10080:10080"
+    command:
+      - --store=tikv
+      - --path=pd:2379
+      - --log-file=/tmp/tidb.log
+    depends_on:
+      - tikv
+      - pd
+    environment:
+      - GOLOG_v=1
+    volumes:
+      - tidb_logs:/tmp
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # PD (Placement Driver)
+  pd:
+    image: pingcap/pd:v7.1.0
+    container_name: pd
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    command:
+      - --name=pd
+      - --data-dir=/data/pd
+      - --client-urls=http://0.0.0.0:2379
+      - --peer-urls=http://0.0.0.0:2380
+      - --advertise-client-urls=http://pd:2379
+      - --advertise-peer-urls=http://pd:2380
+      - --initial-cluster=pd=http://pd:2380
+      - --log-file=/tmp/pd.log
+    volumes:
+      - pd_data:/data/pd
+      - pd_logs:/tmp
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # TiKV Storage
+  tikv:
+    image: pingcap/tikv:v7.1.0
+    container_name: tikv
+    ports:
+      - "20160:20160"
+    command:
+      - --pd-endpoints=pd:2379
+      - --addr=0.0.0.0:20160
+      - --advertise-addr=tikv:20160
+      - --data-dir=/data/tikv
+      - --log-file=/tmp/tikv.log
+    depends_on:
+      - pd
+    volumes:
+      - tikv_data:/data/tikv
+      - tikv_logs:/tmp
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # TiCDC for Change Data Capture
+  ticdc:
+    image: pingcap/ticdc:v7.1.0
+    container_name: ticdc
+    ports:
+      - "8300:8300"
+    command:
+      - /cdc
+      - server
+      - --pd=http://pd:2379
+      - --log-file=/tmp/ticdc.log
+      - --addr=0.0.0.0:8300
+      - --advertise-addr=ticdc:8300
+    depends_on:
+      - tidb
+      - kafka
+    volumes:
+      - ticdc_logs:/tmp
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Zookeeper for Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SYNC_LIMIT: 2
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/2181'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Kafka Message Broker
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Database Initialization Service
+  db-init:
+    image: mysql:8.0
+    container_name: db-init
+    depends_on:
+      tidb:
+        condition: service_started
+    environment:
+      MYSQL_HOST: tidb
+      MYSQL_PORT: 4000
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ""
+      MYSQL_DATABASE: auth_app
+    volumes:
+      - ./database:/docker-entrypoint-initdb.d
+      - ./scripts/init-db.sh:/init-db.sh:ro
+    command: ["/bin/bash", "/init-db.sh"]
+    networks:
+      - app-network
+    restart: "no"
+
+  # CDC Task Setup Service
+  cdc-setup:
+    image: curlimages/curl:8.4.0
+    container_name: cdc-setup
+    depends_on:
+      - ticdc
+      - kafka
+    volumes:
+      - ./scripts/setup-cdc.sh:/setup-cdc.sh:ro
+    command: ["/bin/sh", "/setup-cdc.sh"]
+    networks:
+      - app-network
+    restart: "no"
+
+  # Backend API Service
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: api
+    ports:
+      - "3001:3001"
+    depends_on:
+      - tidb
+      - kafka
+      - db-init
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: tidb
+      DB_PORT: 4000
+      DB_USER: root
+      DB_PASSWORD: ""
+      DB_NAME: auth_app
+      DB_SSL: "false"
+      KAFKA_BROKER: kafka:29092
+      JWT_SECRET: "your-super-secret-jwt-key-change-in-production-environment"
+      LOG_LEVEL: info
+    volumes:
+      - api_logs:/app/logs
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Frontend Client Service
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: client
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_started   
+    environment:
+      REACT_APP_API_URL: http://localhost:3001
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Kafka Consumer for CDC Processing
+  consumer:
+    build:
+      context: ./consumer
+      dockerfile: Dockerfile
+    container_name: consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      cdc-setup:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      KAFKA_BROKER: kafka:29092
+      LOG_LEVEL: info
+    volumes:
+      - consumer_logs:/app/logs
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  # TiDB related volumes
+  pd_data:
+    driver: local
+  tikv_data:
+    driver: local
+  tidb_logs:
+    driver: local
+  pd_logs:
+    driver: local
+  tikv_logs:
+    driver: local
+  ticdc_logs:
+    driver: local
+
+  # Kafka related volumes
+  zookeeper_data:
+    driver: local
+  zookeeper_logs:
+    driver: local
+  kafka_data:
+    driver: local
+
+  # Application logs
+  api_logs:
+    driver: local
+  consumer_logs:
+    driver: local
