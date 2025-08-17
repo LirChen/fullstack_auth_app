@@ -96,7 +96,7 @@ KAFKA_DATABASE_CHANGES_TOPIC=database-changes
 
 ✅ Do not commit .env to version control — add it to .gitignore.
 
-📁 Docker Tips
+# 📁 Docker Tips
 
 To stop all running containers and rebuild:
 
@@ -107,7 +107,7 @@ To check logs:
 
 docker-compose logs -f api
 
-📌 Notes
+# 📌 Notes
 
 Database initializes automatically via db-init container
 
