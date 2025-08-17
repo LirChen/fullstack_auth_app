@@ -31,6 +31,7 @@ Frontend: http://localhost:3000
 Backend: http://localhost:3001
 
 🧪 Technologies Used
+
 React (Frontend)
 
 Node.js (Backend API + Kafka consumer)
@@ -46,6 +47,7 @@ Docker & Docker Compose
 log4js (Logging)
 
 ⚙️ Environment Configuration
+
 Create a .env file in your root project directory and include the following:
 
 # Backend API Environment Variables
@@ -82,6 +84,7 @@ KAFKA_DATABASE_CHANGES_TOPIC=database-changes
 ✅ Do not commit .env to version control — add it to .gitignore.
 
 📁 Docker Tips
+
 To stop all running containers and rebuild:
 
 docker-compose down -v
@@ -91,6 +94,7 @@ To check logs:
 docker-compose logs -f api
 
 📌 Notes
+
 Database initializes automatically via db-init container
 
 TiCDC sets up Kafka changefeeds to capture DB updates
