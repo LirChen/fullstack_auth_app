@@ -21,22 +21,28 @@ The system logs activity and supports monitoring via Kafka and custom logging.
 If needed, rebuild the API service:
 
 docker-compose up -d --build api
-
 Ensure all containers are healthy:
-docker ps
 
+docker ps
 Access the site:
+
 Frontend: http://localhost:3000
+
 Backend: http://localhost:3001
 
 🧪 Technologies Used
 React (Frontend)
 
 Node.js (Backend API + Kafka consumer)
+
 TiDB (Distributed SQL Database)
+
 Kafka (Messaging broker)
+
 TiCDC (Change Data Capture)
+
 Docker & Docker Compose
+
 log4js (Logging)
 
 ⚙️ Environment Configuration
@@ -80,12 +86,13 @@ To stop all running containers and rebuild:
 
 docker-compose down -v
 docker-compose up -d --build
-
 To check logs:
-docker-compose logs -f api
 
+docker-compose logs -f api
 📌 Notes
 Database initializes automatically via db-init container
+
 TiCDC sets up Kafka changefeeds to capture DB updates
+
 Logs from backend and consumer are saved in /app/logs inside each container
 
