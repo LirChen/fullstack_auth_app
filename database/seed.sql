@@ -13,43 +13,43 @@ ON DUPLICATE KEY UPDATE
 setting_value = VALUES(setting_value),
 description = VALUES(description);
 
--- Create default demo user
--- Password is 'Demo123!' (hashed with bcrypt, cost factor 12)
+-- Create demo users with PLAIN TEXT passwords (special handling in app)
+-- These will be handled by the demo user logic in the authentication
+
+-- Demo user: demo@example.com / Demo123!
 INSERT INTO users (username, email, password_hash, created_at) VALUES
 (
     'demo_user', 
     'demo@example.com', 
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LwVnoyNcSmMQrNIAe',
+    'Demo123!',
     NOW()
 )
 ON DUPLICATE KEY UPDATE 
-password_hash = VALUES(password_hash),
+password_hash = 'Demo123!',
 last_login = NULL;
 
--- Create admin user
--- Password is 'Admin123!' (hashed with bcrypt, cost factor 12)
+-- Admin user: admin@example.com / Admin123!
 INSERT INTO users (username, email, password_hash, created_at) VALUES
 (
     'admin', 
     'admin@example.com', 
-    '$2b$12$9K8mKQpVSUCAjS6rGb02.eN5C1mKGY8ZfGh6JtKbLV5UxLhbr5Huy',
+    'Admin123!',
     NOW()
 )
 ON DUPLICATE KEY UPDATE 
-password_hash = VALUES(password_hash),
+password_hash = 'Admin123!',
 last_login = NULL;
 
--- Create test user
--- Password is 'Test123!' (hashed with bcrypt, cost factor 12)
+-- Test user: test@example.com / Test123!
 INSERT INTO users (username, email, password_hash, created_at) VALUES
 (
     'testuser', 
     'test@example.com', 
-    '$2b$12$rG8x4Qr1MnJ7Lm8JB9v5WerQZ5cJ3DpVY2KwH7vV8QJ1mF5mR6N8S',
+    'Test123!',
     NOW()
 )
 ON DUPLICATE KEY UPDATE 
-password_hash = VALUES(password_hash),
+password_hash = 'Test123!',
 last_login = NULL;
 
 -- Insert sample audit log entries
@@ -64,18 +64,23 @@ DELETE FROM user_tokens WHERE expires_at < NOW();
 -- Clean up old audit logs (keep last 30 days)
 DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL 30 DAY;
 
--- Show created users
+-- Show created users with their login credentials
 SELECT 
     id,
     username,
     email,
     created_at,
-    'Demo123!' as demo_password,
     CASE 
-        WHEN username = 'demo_user' THEN 'Use this for testing login'
+        WHEN username = 'demo_user' THEN 'Demo123!'
         WHEN username = 'admin' THEN 'Admin123!'
         WHEN username = 'testuser' THEN 'Test123!'
-    END as password_info
+    END as password_info,
+    CASE 
+        WHEN username = 'demo_user' THEN 'Use this for testing login'
+        WHEN username = 'admin' THEN 'Admin user with elevated privileges'  
+        WHEN username = 'testuser' THEN 'Test user for development'
+    END as description,
+    LEFT(password_hash, 20) as hash_preview
 FROM users 
 WHERE username IN ('demo_user', 'admin', 'testuser')
 ORDER BY id;

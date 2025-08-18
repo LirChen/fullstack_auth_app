@@ -172,8 +172,12 @@ services:
     image: curlimages/curl:8.4.0
     container_name: cdc-setup
     depends_on:
-      - ticdc
-      - kafka
+      db-init:
+        condition: service_completed_successfully
+      ticdc:
+        condition: service_started
+      kafka:
+        condition: service_healthy
     volumes:
       - ./scripts/setup-cdc.sh:/setup-cdc.sh:ro
     command: ["/bin/sh", "/setup-cdc.sh"]
@@ -190,9 +194,10 @@ services:
     ports:
       - "3001:3001"
     depends_on:
-      - tidb
-      - kafka
-      - db-init
+      db-init:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: 3001
@@ -227,7 +232,7 @@ services:
       - "3000:3000"
     depends_on:
       api:
-        condition: service_started   
+        condition: service_healthy   
     environment:
       REACT_APP_API_URL: http://localhost:3001
     networks:
@@ -247,12 +252,10 @@ services:
       dockerfile: Dockerfile
     container_name: consumer
     depends_on:
-      kafka:
-        condition: service_healthy
-      api:
-        condition: service_healthy
       cdc-setup:
         condition: service_completed_successfully
+      api:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       KAFKA_BROKER: kafka:29092

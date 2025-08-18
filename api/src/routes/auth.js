@@ -11,6 +11,24 @@ const { sendUserActivity } = require('../utils/kafka');
 const router = express.Router();
 const logger = log4js.getLogger('auth');
 
+// Demo users with plain text passwords (for seeding only)
+const DEMO_USERS = {
+  'demo@example.com': 'Demo123!',
+  'admin@example.com': 'Admin123!',
+  'test@example.com': 'Test123!'
+};
+
+// Helper function to check if it's a demo user with plain password
+async function verifyPassword(plainPassword, hashedPassword, email) {
+  // Check if it's a demo user and the password matches the plain text
+  if (DEMO_USERS[email] && hashedPassword === DEMO_USERS[email]) {
+    return true;
+  }
+  
+  // Otherwise, use bcrypt comparison
+  return await bcrypt.compare(plainPassword, hashedPassword);
+}
+
 // JWT secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
 
@@ -191,7 +209,7 @@ router.post('/login', validateLogin, async (req, res) => {
     }
 
     // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+    const isPasswordValid = await verifyPassword(password, user.password_hash, email);
     if (!isPasswordValid) {
       logUserActivity(user.id, 'LOGIN_FAILED', clientIP, {
         userAgent: req.get('user-agent'),

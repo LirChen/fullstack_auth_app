@@ -2,7 +2,7 @@ const { Kafka } = require('kafkajs');
 const log4js = require('log4js');
 require('dotenv').config();
 
-// Setup logging
+// Setup logging - Fixed configuration
 log4js.configure({
   appenders: {
     console: {
@@ -18,7 +18,8 @@ log4js.configure({
       maxLogSize: 10485760,
       backups: 3,
       layout: {
-        type: 'json'
+        type: 'pattern',
+        pattern: '%d{yyyy-MM-dd hh:mm:ss.SSS} [%p] %c - %m'
       }
     },
     cdcEvents: {
@@ -27,7 +28,8 @@ log4js.configure({
       maxLogSize: 10485760,
       backups: 5,
       layout: {
-        type: 'json'
+        type: 'pattern',
+        pattern: '%d{yyyy-MM-dd hh:mm:ss.SSS} [%p] %c - %m'
       }
     }
   },
@@ -53,7 +55,7 @@ const cdcLogger = log4js.getLogger('cdc');
 // Kafka configuration
 const kafka = new Kafka({
   clientId: 'cdc-consumer',
-  brokers: [process.env.KAFKA_BROKER || 'kafka:9092'],
+  brokers: [process.env.KAFKA_BROKER || 'kafka:29092'],
   retry: {
     initialRetryTime: 100,
     retries: 8,
@@ -313,7 +315,7 @@ process.on('unhandledRejection', (reason, promise) => {
 logger.info({
   timestamp: new Date().toISOString(),
   message: 'Starting CDC Consumer',
-  kafkaBroker: process.env.KAFKA_BROKER || 'kafka:9092',
+  kafkaBroker: process.env.KAFKA_BROKER || 'kafka:29092',
   groupId: 'cdc-processor-group'
 });
 

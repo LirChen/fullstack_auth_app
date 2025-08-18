@@ -21,7 +21,7 @@ curl -X POST http://ticdc:8300/api/v1/changefeeds \
   -H "Content-Type: application/json" \
   -d '{
     "changefeed_id": "auth-app-cdc",
-    "sink_uri": "kafka://kafka:29092/database-changes?protocol=open-protocol&partition-num=3",
+    "sink_uri": "kafka://kafka:29092/database-changes?protocol=canal-json&partition-num=3"
     "rules": [
       "auth_app.users",
       "auth_app.user_tokens",
