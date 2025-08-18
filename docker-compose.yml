@@ -1,4 +1,88 @@
 services:
+  # One-time PowerShell fix for CRLF -> LF with UTF-8 (no BOM)
+  lf-fix:
+    image: alpine:3.19
+    container_name: lf-fix
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: >
+      sh -c "
+        set -e;
+        apk add --no-cache dos2unix >/dev/null;
+        for f in ./scripts/init-db.sh ./scripts/setup-cdc.sh; do
+          if [ -f \"$$f\" ]; then
+            dos2unix -q \"$$f\" || true;
+            if [ \"$(head -c 3 \"$$f\" | od -An -t x1 | tr -d ' ')\" = 'efbbbf' ]; then
+              tail -c +4 \"$$f\" > \"$$f.tmp\" && mv \"$$f.tmp\" \"$$f\";
+            fi;
+            chmod +x \"$$f\";
+          fi;
+        done;
+        echo 'lf-fix completed';
+      "
+    networks:
+      - app-network
+    restart: "no"
+
+  # Database Initialization Service
+  db-init:
+    image: mysql:8.0
+    container_name: db-init
+    depends_on:
+      lf-fix:
+        condition: service_completed_successfully
+      tidb:
+        condition: service_started
+    environment:
+      MYSQL_HOST: tidb
+      MYSQL_PORT: 4000
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ""
+      MYSQL_DATABASE: auth_app
+    volumes:
+      - ./database:/docker-entrypoint-initdb.d
+      - ./scripts/init-db.sh:/original-init-db.sh:ro
+    command: >
+      bash -c "
+        echo 'Fixing line endings and running database initialization...'
+        sed 's/\r$//' /original-init-db.sh > /tmp/fixed-init-db.sh
+        chmod +x /tmp/fixed-init-db.sh
+        /tmp/fixed-init-db.sh
+      "
+    networks:
+      - app-network
+    restart: "no"
+
+  # CDC Task Setup Service
+  cdc-setup:
+    image: alpine:3.18
+    container_name: cdc-setup
+    depends_on:
+      lf-fix:
+        condition: service_completed_successfully
+      db-init:
+        condition: service_completed_successfully
+      ticdc:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./scripts/setup-cdc.sh:/original-setup-cdc.sh:ro
+    command: >
+      sh -c "
+        echo 'Installing dependencies and fixing line endings...'
+        apk add --no-cache curl jq
+        sed 's/\r$//' /original-setup-cdc.sh > /tmp/fixed-setup-cdc.sh
+        chmod +x /tmp/fixed-setup-cdc.sh
+        /tmp/fixed-setup-cdc.sh
+      "
+    networks:
+      - app-network
+    restart: "no"
+
+  # (rest of your docker-compose.yml remains the same...)
+  
   # TiDB Database
   tidb:
     image: pingcap/tidb:v7.1.0
@@ -145,45 +229,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-
-  # Database Initialization Service
-  db-init:
-    image: mysql:8.0
-    container_name: db-init
-    depends_on:
-      tidb:
-        condition: service_started
-    environment:
-      MYSQL_HOST: tidb
-      MYSQL_PORT: 4000
-      MYSQL_USER: root
-      MYSQL_PASSWORD: ""
-      MYSQL_DATABASE: auth_app
-    volumes:
-      - ./database:/docker-entrypoint-initdb.d
-      - ./scripts/init-db.sh:/init-db.sh:ro
-    command: ["/bin/bash", "/init-db.sh"]
-    networks:
-      - app-network
-    restart: "no"
-
-  # CDC Task Setup Service
-  cdc-setup:
-    image: curlimages/curl:8.4.0
-    container_name: cdc-setup
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-      ticdc:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-    volumes:
-      - ./scripts/setup-cdc.sh:/setup-cdc.sh:ro
-    command: ["/bin/sh", "/setup-cdc.sh"]
-    networks:
-      - app-network
-    restart: "no"
 
   # Backend API Service
   api:
