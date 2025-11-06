@@ -22,15 +22,20 @@ CREATE TABLE IF NOT EXISTS user_tokens (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     token VARCHAR(500) NOT NULL UNIQUE,
+    token_type ENUM('access', 'refresh') DEFAULT 'access',
     expires_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMP NULL,
     is_active BOOLEAN DEFAULT TRUE,
-    token_type ENUM('access', 'refresh') DEFAULT 'access',
+    revoked_at TIMESTAMP NULL,
+    ip_address VARCHAR(45) NULL,
+    user_agent TEXT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_user_id (user_id),
     INDEX idx_token (token),
+    INDEX idx_token_type (token_type),
     INDEX idx_expires_at (expires_at),
-    INDEX idx_active_tokens (user_id, is_active, expires_at)
+    INDEX idx_active_tokens (user_id, token_type, is_active, expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- User sessions table (optional, for session tracking)
@@ -81,7 +86,7 @@ CREATE TABLE IF NOT EXISTS system_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create a view for active user sessions
-CREATE VIEW active_user_sessions AS
+CREATE OR REPLACE VIEW active_user_sessions AS
 SELECT 
     us.*,
     u.username,
@@ -92,7 +97,7 @@ WHERE us.is_active = TRUE
 AND us.expires_at > NOW();
 
 -- Create a view for user statistics
-CREATE VIEW user_statistics AS
+CREATE OR REPLACE VIEW user_statistics AS
 SELECT 
     u.id,
     u.username,

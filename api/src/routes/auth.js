@@ -11,26 +11,11 @@ const { sendUserActivity } = require('../utils/kafka');
 const router = express.Router();
 const logger = log4js.getLogger('auth');
 
-// Demo users with plain text passwords (for seeding only)
-const DEMO_USERS = {
-  'demo@example.com': 'Demo123!',
-  'admin@example.com': 'Admin123!',
-  'test@example.com': 'Test123!'
-};
-
-// Helper function to check if it's a demo user with plain password
-async function verifyPassword(plainPassword, hashedPassword, email) {
-  // Check if it's a demo user and the password matches the plain text
-  if (DEMO_USERS[email] && hashedPassword === DEMO_USERS[email]) {
-    return true;
-  }
-  
-  // Otherwise, use bcrypt comparison
-  return await bcrypt.compare(plainPassword, hashedPassword);
-}
-
-// JWT secret
+// JWT secret from environment
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+const JWT_EXPIRY = process.env.JWT_EXPIRY || '24h';
+const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRY || '7d';
+const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS) || 12;
 
 // Validation middleware
 const validateLogin = [
@@ -105,7 +90,7 @@ router.post('/register', validateRegister, async (req, res) => {
     }
 
     // Hash password
-    const saltRounds = 12;
+    const saltRounds = BCRYPT_ROUNDS;
     const password_hash = await bcrypt.hash(password, saltRounds);
 
     // Create user
@@ -115,16 +100,25 @@ router.post('/register', validateRegister, async (req, res) => {
       password_hash
     });
 
-    // Generate JWT token
-    const token = jwt.sign(
+    // Generate JWT tokens
+    const accessToken = jwt.sign(
       { userId, username, email },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: JWT_EXPIRY }
     );
 
-    // Store token in database
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await Token.create(userId, token, expiresAt);
+    const refreshToken = jwt.sign(
+      { userId, type: 'refresh' },
+      JWT_SECRET,
+      { expiresIn: REFRESH_TOKEN_EXPIRY }
+    );
+
+    // Store tokens in database
+    const accessExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const refreshExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    
+    await Token.create(userId, accessToken, accessExpiresAt, 'access', clientIP, req.get('user-agent'));
+    await Token.create(userId, refreshToken, refreshExpiresAt, 'refresh', clientIP, req.get('user-agent'));
 
     // Log successful registration
     const activityData = logUserActivity(userId, 'USER_REGISTERED', clientIP, {
@@ -145,7 +139,9 @@ router.post('/register', validateRegister, async (req, res) => {
 
     res.status(201).json({
       message: 'User registered successfully',
-      token,
+      accessToken,
+      refreshToken,
+      expiresIn: JWT_EXPIRY,
       user: {
         id: userId,
         username,
@@ -209,7 +205,7 @@ router.post('/login', validateLogin, async (req, res) => {
     }
 
     // Verify password
-    const isPasswordValid = await verifyPassword(password, user.password_hash, email);
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
     if (!isPasswordValid) {
       logUserActivity(user.id, 'LOGIN_FAILED', clientIP, {
         userAgent: req.get('user-agent'),
@@ -224,16 +220,25 @@ router.post('/login', validateLogin, async (req, res) => {
       });
     }
 
-    // Generate JWT token
-    const token = jwt.sign(
+    // Generate JWT tokens
+    const accessToken = jwt.sign(
       { userId: user.id, username: user.username, email: user.email },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: JWT_EXPIRY }
     );
 
-    // Store token in database
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await Token.create(user.id, token, expiresAt);
+    const refreshToken = jwt.sign(
+      { userId: user.id, type: 'refresh' },
+      JWT_SECRET,
+      { expiresIn: REFRESH_TOKEN_EXPIRY }
+    );
+
+    // Store tokens in database
+    const accessExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const refreshExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    
+    await Token.create(user.id, accessToken, accessExpiresAt, 'access', clientIP, req.get('user-agent'));
+    await Token.create(user.id, refreshToken, refreshExpiresAt, 'refresh', clientIP, req.get('user-agent'));
 
     // Update last login
     await User.updateLastLogin(user.id, clientIP);
@@ -257,7 +262,9 @@ router.post('/login', validateLogin, async (req, res) => {
 
     res.json({
       message: 'Login successful',
-      token,
+      accessToken,
+      refreshToken,
+      expiresIn: JWT_EXPIRY,
       user: {
         id: user.id,
         username: user.username,
@@ -348,6 +355,85 @@ router.get('/validate', async (req, res) => {
   } catch (error) {
     logger.error('Token validation error:', error);
     res.status(500).json({ error: 'Token validation failed' });
+  }
+});
+
+// Refresh token endpoint
+router.post('/refresh', async (req, res) => {
+  const clientIP = req.ip || req.connection.remoteAddress;
+  
+  try {
+    const { refreshToken } = req.body;
+    
+    if (!refreshToken) {
+      return res.status(400).json({ error: 'Refresh token required' });
+    }
+
+    // Verify refresh token
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, JWT_SECRET);
+      
+      if (decoded.type !== 'refresh') {
+        return res.status(401).json({ error: 'Invalid refresh token' });
+      }
+    } catch (error) {
+      return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    }
+
+    // Check if refresh token exists in database
+    const tokenInfo = await Token.findValidRefreshToken(refreshToken);
+    
+    if (!tokenInfo) {
+      return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    }
+
+    // Get user info
+    const user = await User.findById(tokenInfo.user_id);
+    
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Generate new access token
+    const newAccessToken = jwt.sign(
+      { userId: user.id, username: user.username, email: user.email },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRY }
+    );
+
+    // Store new access token
+    const accessExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await Token.create(user.id, newAccessToken, accessExpiresAt, 'access', clientIP, req.get('user-agent'));
+
+    // Update refresh token last used
+    await Token.updateLastUsed(refreshToken);
+
+    logger.info({
+      timestamp: new Date().toISOString(),
+      action: 'TOKEN_REFRESHED',
+      userId: user.id,
+      ip: clientIP
+    });
+
+    res.json({
+      message: 'Token refreshed successfully',
+      accessToken: newAccessToken,
+      expiresIn: JWT_EXPIRY
+    });
+
+  } catch (error) {
+    logger.error({
+      timestamp: new Date().toISOString(),
+      error: 'Token refresh failed',
+      details: error.message,
+      ip: clientIP
+    });
+
+    res.status(500).json({
+      error: 'Token refresh failed',
+      message: 'Internal server error'
+    });
   }
 });
 

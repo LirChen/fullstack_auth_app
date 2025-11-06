@@ -46,7 +46,7 @@ export function AuthProvider({ children }) {
       setLoading(true);
 
       const { data } = await api.post('/api/auth/login', { email, password });
-      const token = data?.token;
+      const token = data?.accessToken || data?.token;
       setToken(token);
 
       await refreshUser();
@@ -74,7 +74,7 @@ export function AuthProvider({ children }) {
         email,
         password,
       });
-      const token = data?.token;
+      const token = data?.accessToken || data?.token;
       setToken(token);
 
       await refreshUser();

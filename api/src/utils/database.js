@@ -146,9 +146,9 @@ const User = {
 
 // Token-related database operations
 const Token = {
-  async create(userId, token, expiresAt) {
-    const sql = 'INSERT INTO user_tokens (user_id, token, expires_at, created_at) VALUES (?, ?, ?, NOW())';
-    await query(sql, [userId, token, expiresAt]);
+  async create(userId, token, expiresAt, tokenType = 'access', ipAddress = null, userAgent = null) {
+    const sql = 'INSERT INTO user_tokens (user_id, token, token_type, expires_at, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())';
+    await query(sql, [userId, token, tokenType, expiresAt, ipAddress, userAgent]);
   },
 
   async findValid(token) {
@@ -156,19 +156,51 @@ const Token = {
       SELECT ut.*, u.username, u.email 
       FROM user_tokens ut 
       JOIN users u ON ut.user_id = u.id 
-      WHERE ut.token = ? AND ut.expires_at > NOW() AND ut.is_active = 1
+      WHERE ut.token = ? AND ut.expires_at > NOW() AND ut.is_active = 1 AND ut.revoked_at IS NULL
     `;
     const results = await query(sql, [token]);
     return results[0] || null;
   },
 
-  async invalidate(token) {
-    const sql = 'UPDATE user_tokens SET is_active = 0 WHERE token = ?';
+  async findValidRefreshToken(token) {
+    const sql = `
+      SELECT ut.*, u.username, u.email 
+      FROM user_tokens ut 
+      JOIN users u ON ut.user_id = u.id 
+      WHERE ut.token = ? 
+        AND ut.token_type = 'refresh' 
+        AND ut.expires_at > NOW() 
+        AND ut.is_active = 1 
+        AND ut.revoked_at IS NULL
+    `;
+    const results = await query(sql, [token]);
+    return results[0] || null;
+  },
+
+  async updateLastUsed(token) {
+    const sql = 'UPDATE user_tokens SET last_used_at = NOW() WHERE token = ?';
     await query(sql, [token]);
   },
 
+  async invalidate(token) {
+    const sql = 'UPDATE user_tokens SET is_active = 0, revoked_at = NOW() WHERE token = ?';
+    await query(sql, [token]);
+  },
+
+  async invalidateAllUserTokens(userId, tokenType = null) {
+    let sql = 'UPDATE user_tokens SET is_active = 0, revoked_at = NOW() WHERE user_id = ?';
+    const params = [userId];
+    
+    if (tokenType) {
+      sql += ' AND token_type = ?';
+      params.push(tokenType);
+    }
+    
+    await query(sql, params);
+  },
+
   async cleanup() {
-    const sql = 'DELETE FROM user_tokens WHERE expires_at < NOW()';
+    const sql = 'DELETE FROM user_tokens WHERE expires_at < NOW() OR (is_active = 0 AND revoked_at < NOW() - INTERVAL 30 DAY)';
     await query(sql);
   }
 };

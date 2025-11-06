@@ -13,43 +13,46 @@ ON DUPLICATE KEY UPDATE
 setting_value = VALUES(setting_value),
 description = VALUES(description);
 
--- Create demo users with PLAIN TEXT passwords (special handling in app)
--- These will be handled by the demo user logic in the authentication
+-- Create demo users with HASHED passwords (bcrypt with 12 rounds)
+-- Passwords are pre-hashed for security
 
 -- Demo user: demo@example.com / Demo123!
+-- Hash generated with bcrypt.hash('Demo123!', 12)
 INSERT INTO users (username, email, password_hash, created_at) VALUES
 (
     'demo_user', 
     'demo@example.com', 
-    'Demo123!',
+    '$2a$12$qDE.EbGldyHRHUcC90.38.6cxovb1sunf/t.jRjcoWV0uEHcNIUvi',
     NOW()
 )
 ON DUPLICATE KEY UPDATE 
-password_hash = 'Demo123!',
+password_hash = '$2a$12$qDE.EbGldyHRHUcC90.38.6cxovb1sunf/t.jRjcoWV0uEHcNIUvi',
 last_login = NULL;
 
 -- Admin user: admin@example.com / Admin123!
+-- Hash generated with bcrypt.hash('Admin123!', 12)
 INSERT INTO users (username, email, password_hash, created_at) VALUES
 (
     'admin', 
     'admin@example.com', 
-    'Admin123!',
+    '$2a$12$/xIRZmY./qXU2qWaOMks6O8eKAKx3oPTPOo8AE0RJYr7WZJlknl2q',
     NOW()
 )
 ON DUPLICATE KEY UPDATE 
-password_hash = 'Admin123!',
+password_hash = '$2a$12$/xIRZmY./qXU2qWaOMks6O8eKAKx3oPTPOo8AE0RJYr7WZJlknl2q',
 last_login = NULL;
 
 -- Test user: test@example.com / Test123!
+-- Hash generated with bcrypt.hash('Test123!', 12)
 INSERT INTO users (username, email, password_hash, created_at) VALUES
 (
     'testuser', 
     'test@example.com', 
-    'Test123!',
+    '$2a$12$cHIAKkzyljMUrk8D3MkUf.Xy19KUih5DAuhkRbHI8YycQ6SkvNXai',
     NOW()
 )
 ON DUPLICATE KEY UPDATE 
-password_hash = 'Test123!',
+password_hash = '$2a$12$cHIAKkzyljMUrk8D3MkUf.Xy19KUih5DAuhkRbHI8YycQ6SkvNXai',
 last_login = NULL;
 
 -- Insert sample audit log entries

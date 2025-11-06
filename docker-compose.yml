@@ -243,18 +243,31 @@ services:
         condition: service_completed_successfully
       kafka:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
-      NODE_ENV: production
-      PORT: 3001
-      DB_HOST: tidb
-      DB_PORT: 4000
-      DB_USER: root
-      DB_PASSWORD: ""
-      DB_NAME: auth_app
-      DB_SSL: "false"
-      KAFKA_BROKER: kafka:29092
-      JWT_SECRET: "your-super-secret-jwt-key-change-in-production-environment"
-      LOG_LEVEL: info
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-3001}
+      DB_HOST: ${DB_HOST:-tidb}
+      DB_PORT: ${DB_PORT:-4000}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      DB_NAME: ${DB_NAME:-auth_app}
+      DB_SSL: ${DB_SSL:-false}
+      DB_CONNECTION_LIMIT: ${DB_CONNECTION_LIMIT:-10}
+      KAFKA_BROKER: ${KAFKA_BROKER:-kafka:29092}
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-auth-api}
+      KAFKA_USER_ACTIVITIES_TOPIC: ${KAFKA_USER_ACTIVITIES_TOPIC:-user-activities}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRY: ${JWT_EXPIRY:-24h}
+      REFRESH_TOKEN_EXPIRY: ${REFRESH_TOKEN_EXPIRY:-7d}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:3000}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-100}
+      AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-60000}
+      AUTH_RATE_LIMIT_MAX_REQUESTS: ${AUTH_RATE_LIMIT_MAX_REQUESTS:-10}
     volumes:
       - api_logs:/app/logs
     networks:
@@ -272,14 +285,19 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:3001}
     container_name: client
     ports:
       - "3000:3000"
     depends_on:
       api:
         condition: service_healthy   
+    env_file:
+      - .env
     environment:
-      REACT_APP_API_URL: http://localhost:3001
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:3001}
+      REACT_APP_ENVIRONMENT: ${REACT_APP_ENVIRONMENT:-production}
     networks:
       - app-network
     restart: unless-stopped
@@ -301,10 +319,15 @@ services:
         condition: service_completed_successfully
       api:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
-      NODE_ENV: production
-      KAFKA_BROKER: kafka:29092
-      LOG_LEVEL: info
+      NODE_ENV: ${NODE_ENV:-production}
+      KAFKA_BROKER: ${KAFKA_BROKER:-kafka:29092}
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-auth-consumer}
+      KAFKA_USER_ACTIVITIES_TOPIC: ${KAFKA_USER_ACTIVITIES_TOPIC:-user-activities}
+      KAFKA_DATABASE_CHANGES_TOPIC: ${KAFKA_DATABASE_CHANGES_TOPIC:-database-changes}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - consumer_logs:/app/logs
     networks:
